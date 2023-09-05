@@ -150,10 +150,10 @@ func (r *reader) Read(b []byte) (n int, err error) {
 
 func (r *reader) ReadContext(ctx context.Context, b []byte) (n int, err error) {
 	if len(b) > 0 {
-		r.reading = true
 		// TODO: Rework reader piece priorities so we don't have to push updates in to the Client
 		// and take the lock here.
 		r.mu.Lock()
+		r.reading = true
 		r.posChanged()
 		r.mu.Unlock()
 	}
@@ -169,12 +169,12 @@ func (r *reader) ReadContext(ctx context.Context, b []byte) (n int, err error) {
 	r.mu.Lock()
 	r.pos += int64(n)
 	r.posChanged()
-	r.mu.Unlock()
 	if r.pos >= r.length {
 		err = io.EOF
 	} else if err == io.EOF {
 		err = io.ErrUnexpectedEOF
 	}
+	r.mu.Unlock()
 	return
 }
 

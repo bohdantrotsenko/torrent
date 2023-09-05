@@ -2,11 +2,9 @@ module github.com/anacrolix/torrent/fs
 
 go 1.20
 
-toolchain go1.21.0
-
 require (
 	github.com/anacrolix/envpprof v1.2.1
-	github.com/anacrolix/fuse v0.2.0
+	github.com/anacrolix/fuse v0.3.1-0.20230813104031-5693fd141b21
 	github.com/anacrolix/log v0.14.1
 	github.com/anacrolix/missinggo/v2 v2.7.2-0.20230527121029-a582b4f397b9
 	github.com/anacrolix/tagflag v1.3.0
@@ -78,7 +76,7 @@ require (
 	golang.org/x/exp v0.0.0-20220613132600-b0d781184e0d // indirect
 	golang.org/x/net v0.7.0 // indirect
 	golang.org/x/sync v0.0.0-20220722155255-886fb9371eb4 // indirect
-	golang.org/x/sys v0.6.0 // indirect
+	golang.org/x/sys v0.10.0 // indirect
 	golang.org/x/time v0.0.0-20220609170525-579cf78fd858 // indirect
 	golang.org/x/xerrors v0.0.0-20220609144429-65e65417b02f // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect

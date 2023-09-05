@@ -150,6 +150,7 @@ func mainErr() error {
 		return fmt.Errorf("serving fuse fs: %w", err)
 	}
 	logger.Levelf(log.Debug, "fuse fs completed successfully. waiting for conn ready")
+	conn.Close()
 	<-conn.Ready
 	if err := conn.MountError; err != nil {
 		return fmt.Errorf("mount error: %w", err)
