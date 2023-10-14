@@ -1019,7 +1019,7 @@ func (cl *Client) runReceivedConn(c *PeerConn) {
 	if err != nil {
 		cl.logger.LazyLog(log.Debug, func() log.Msg {
 			return log.Fmsg(
-				"error receiving handshakes on %v: %s", c, err,
+				"error receiving handshakes on %s: %s", c, err,
 			).Add(
 				"network", c.Network,
 			)
