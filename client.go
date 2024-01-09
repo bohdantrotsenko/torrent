@@ -43,7 +43,6 @@ import (
 	"github.com/anacrolix/torrent/metainfo"
 	"github.com/anacrolix/torrent/mse"
 	pp "github.com/anacrolix/torrent/peer_protocol"
-	utHolepunch "github.com/anacrolix/torrent/peer_protocol/ut-holepunch"
 	request_strategy "github.com/anacrolix/torrent/request-strategy"
 	"github.com/anacrolix/torrent/storage"
 	"github.com/anacrolix/torrent/tracker"
@@ -1078,6 +1077,10 @@ func (t *Torrent) runHandshookConn(pc *PeerConn) error {
 		return fmt.Errorf("adding connection: %w", err)
 	}
 	defer t.dropConnection(pc)
+	pc.addBuiltinLtepProtocols(!cl.config.DisablePEX)
+	for _, cb := range pc.callbacks.PeerConnAdded {
+		cb(pc)
+	}
 	pc.startMessageWriter()
 	pc.sendInitialMessages()
 	pc.initUpdateRequestsTimer()
@@ -1135,10 +1138,6 @@ func (pc *PeerConn) sendInitialMessages() {
 			ExtendedID: pp.HandshakeExtendedID,
 			ExtendedPayload: func() []byte {
 				msg := pp.ExtendedHandshakeMessage{
-					M: map[pp.ExtensionName]pp.ExtensionNumber{
-						pp.ExtensionNameMetadata:  metadataExtendedId,
-						utHolepunch.ExtensionName: utHolepunchExtendedId,
-					},
 					V:            cl.config.ExtendedHandshakeClientVersion,
 					Reqq:         localClientReqq,
 					YourIp:       pp.CompactIp(pc.remoteIp()),
@@ -1149,8 +1148,12 @@ func (pc *PeerConn) sendInitialMessages() {
 					Ipv4: pp.CompactIp(cl.config.PublicIp4.To4()),
 					Ipv6: cl.config.PublicIp6.To16(),
 				}
-				if !cl.config.DisablePEX {
-					msg.M[pp.ExtensionNamePex] = pexExtendedId
+				g.MakeMapWithCap(&msg.M, len(pc.LocalLtepProtocolMap))
+				for i, name := range pc.LocalLtepProtocolMap {
+					old := g.MapInsert(msg.M, name, pp.ExtensionNumber(i+1))
+					if old.Ok {
+						panic(fmt.Sprintf("extension %q already defined with id %v", name, old.Value))
+					}
 				}
 				return bencode.MustMarshal(msg)
 			}(),

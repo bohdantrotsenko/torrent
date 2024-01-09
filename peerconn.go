@@ -44,6 +44,14 @@ type PeerConn struct {
 	PeerID             PeerID
 	PeerExtensionBytes pp.PeerExtensionBits
 	PeerListenPort     int
+	// 1-based mapping from extension number to extension name (subtract one from the extension ID
+	// to find the corresponding protocol name). The first LocalLtepProtocolBuiltinCount of these
+	// are use builtin handlers. If you want to handle builtin protocols yourself, you would move
+	// them above the threshold. You can disable them by removing them entirely, and add your own.
+	// These changes should be done in the PeerConnAdded callback.
+	LocalLtepProtocolMap []pp.ExtensionName
+	// How many of the protocols are using the builtin handlers.
+	LocalLtepProtocolBuiltinCount int
 
 	// The actual Conn, used for closing, and setting socket options. Do not use methods on this
 	// while holding any mutexes.
@@ -55,6 +63,7 @@ type PeerConn struct {
 
 	messageWriter peerConnMsgWriter
 
+	// The peer's extension map, as sent in their extended handshake.
 	PeerExtensionIDs map[pp.ExtensionName]pp.ExtensionNumber
 	PeerClientName   atomic.Value
 	uploadTimer      *time.Timer
@@ -877,8 +886,17 @@ func (c *PeerConn) onReadExtendedMsg(id pp.ExtensionNumber, payload []byte) (err
 	}()
 	t := c.t
 	cl := t.cl
-	switch id {
-	case pp.HandshakeExtendedID:
+	{
+		event := PeerConnReadExtensionMessageEvent{
+			PeerConn:        c,
+			ExtensionNumber: id,
+			Payload:         payload,
+		}
+		for _, cb := range c.callbacks.PeerConnReadExtensionMessage {
+			cb(event)
+		}
+	}
+	if id == pp.HandshakeExtendedID {
 		var d pp.ExtendedHandshakeMessage
 		if err := bencode.Unmarshal(payload, &d); err != nil {
 			c.logger.Printf("error parsing extended handshake message %q: %s", payload, err)
@@ -887,7 +905,6 @@ func (c *PeerConn) onReadExtendedMsg(id pp.ExtensionNumber, payload []byte) (err
 		if cb := c.callbacks.ReadExtendedHandshake; cb != nil {
 			cb(c, &d)
 		}
-		// c.logger.WithDefaultLevel(log.Debug).Printf("received extended handshake message:\n%s", spew.Sdump(d))
 		if d.Reqq != 0 {
 			c.PeerMaxRequests = d.Reqq
 		}
@@ -919,13 +936,25 @@ func (c *PeerConn) onReadExtendedMsg(id pp.ExtensionNumber, payload []byte) (err
 			c.pex.Init(c)
 		}
 		return nil
-	case metadataExtendedId:
+	}
+	// Zero was taken care of above.
+	protocolIndex := int(id - 1)
+	if protocolIndex >= len(c.LocalLtepProtocolMap) {
+		return fmt.Errorf("unexpected extended message ID: %v", id)
+	}
+	if protocolIndex >= c.LocalLtepProtocolBuiltinCount {
+		// The message should have been handled by the PeerConnReadExtensionMessage callback.
+		return nil
+	}
+	extensionName := c.LocalLtepProtocolMap[protocolIndex]
+	switch extensionName {
+	case pp.ExtensionNameMetadata:
 		err := cl.gotMetadataExtensionMsg(payload, t, c)
 		if err != nil {
 			return fmt.Errorf("handling metadata extension message: %w", err)
 		}
 		return nil
-	case pexExtendedId:
+	case pp.ExtensionNamePex:
 		if !c.pex.IsEnabled() {
 			return nil // or hang-up maybe?
 		}
@@ -934,7 +963,7 @@ func (c *PeerConn) onReadExtendedMsg(id pp.ExtensionNumber, payload []byte) (err
 			err = fmt.Errorf("receiving pex message: %w", err)
 		}
 		return
-	case utHolepunchExtendedId:
+	case utHolepunch.ExtensionName:
 		var msg utHolepunch.Msg
 		err = msg.UnmarshalBinary(payload)
 		if err != nil {
@@ -944,7 +973,7 @@ func (c *PeerConn) onReadExtendedMsg(id pp.ExtensionNumber, payload []byte) (err
 		err = c.t.handleReceivedUtHolepunchMsg(msg, c)
 		return
 	default:
-		return fmt.Errorf("unexpected extended message ID: %v", id)
+		panic(fmt.Sprintf("unhandled builtin extension protocol %q", extensionName))
 	}
 }
 
@@ -1151,4 +1180,16 @@ func (c *PeerConn) useful() bool {
 		return true
 	}
 	return false
+}
+
+func (c *PeerConn) addBuiltinLtepProtocols(pex bool) {
+	ps := []pp.ExtensionName{pp.ExtensionNameMetadata, utHolepunch.ExtensionName}
+	if pex {
+		ps = append(ps, pp.ExtensionNamePex)
+	}
+	if c.LocalLtepProtocolMap != nil {
+		panic("already set")
+	}
+	c.LocalLtepProtocolMap = ps
+	c.LocalLtepProtocolBuiltinCount = len(ps)
 }
