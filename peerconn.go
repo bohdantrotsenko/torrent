@@ -44,14 +44,12 @@ type PeerConn struct {
 	PeerID             PeerID
 	PeerExtensionBytes pp.PeerExtensionBits
 	PeerListenPort     int
-	// 1-based mapping from extension number to extension name (subtract one from the extension ID
-	// to find the corresponding protocol name). The first LocalLtepProtocolBuiltinCount of these
-	// are use builtin handlers. If you want to handle builtin protocols yourself, you would move
-	// them above the threshold. You can disable them by removing them entirely, and add your own.
-	// These changes should be done in the PeerConnAdded callback.
-	LocalLtepProtocolMap []pp.ExtensionName
-	// How many of the protocols are using the builtin handlers.
-	LocalLtepProtocolBuiltinCount int
+
+	// The local extended protocols to advertise in the extended handshake, and to support receiving
+	// from the peer. This will point to the Client default when the PeerConnAdded callback is
+	// invoked. Do not modify this, point it to your own instance. Do not modify the destination
+	// after returning from the callback.
+	LocalLtepProtocolMap *LocalLtepProtocolMap
 
 	// The actual Conn, used for closing, and setting socket options. Do not use methods on this
 	// while holding any mutexes.
@@ -937,16 +935,14 @@ func (c *PeerConn) onReadExtendedMsg(id pp.ExtensionNumber, payload []byte) (err
 		}
 		return nil
 	}
-	// Zero was taken care of above.
-	protocolIndex := int(id - 1)
-	if protocolIndex >= len(c.LocalLtepProtocolMap) {
-		return fmt.Errorf("unexpected extended message ID: %v", id)
+	extensionName, builtin, err := c.LocalLtepProtocolMap.lookupId(id)
+	if err != nil {
+		return
 	}
-	if protocolIndex >= c.LocalLtepProtocolBuiltinCount {
-		// The message should have been handled by the PeerConnReadExtensionMessage callback.
+	if !builtin {
+		// User should have taken care of this in PeerConnReadExtensionMessage callback.
 		return nil
 	}
-	extensionName := c.LocalLtepProtocolMap[protocolIndex]
 	switch extensionName {
 	case pp.ExtensionNameMetadata:
 		err := cl.gotMetadataExtensionMsg(payload, t, c)
@@ -1182,14 +1178,17 @@ func (c *PeerConn) useful() bool {
 	return false
 }
 
-func (c *PeerConn) addBuiltinLtepProtocols(pex bool) {
+func makeBuiltinLtepProtocols(pex bool) LocalLtepProtocolMap {
 	ps := []pp.ExtensionName{pp.ExtensionNameMetadata, utHolepunch.ExtensionName}
 	if pex {
 		ps = append(ps, pp.ExtensionNamePex)
 	}
-	if c.LocalLtepProtocolMap != nil {
-		panic("already set")
+	return LocalLtepProtocolMap{
+		Index:      ps,
+		NumBuiltin: len(ps),
 	}
-	c.LocalLtepProtocolMap = ps
-	c.LocalLtepProtocolBuiltinCount = len(ps)
+}
+
+func (c *PeerConn) addBuiltinLtepProtocols(pex bool) {
+	c.LocalLtepProtocolMap = &c.t.cl.defaultLocalLtepProtocolMap
 }

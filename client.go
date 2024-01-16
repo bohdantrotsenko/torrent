@@ -89,6 +89,8 @@ type Client struct {
 	httpClient            *http.Client
 
 	clientHolepunchAddrSets
+
+	defaultLocalLtepProtocolMap LocalLtepProtocolMap
 }
 
 type ipStr string
@@ -213,6 +215,7 @@ func (cl *Client) init(cfg *ClientConfig) {
 			MaxConnsPerHost: 10,
 		}
 	}
+	cl.defaultLocalLtepProtocolMap = makeBuiltinLtepProtocols(!cfg.DisablePEX)
 }
 
 func NewClient(cfg *ClientConfig) (cl *Client, err error) {
@@ -220,9 +223,8 @@ func NewClient(cfg *ClientConfig) (cl *Client, err error) {
 		cfg = NewDefaultClientConfig()
 		cfg.ListenPort = 0
 	}
-	var client Client
-	client.init(cfg)
-	cl = &client
+	cl = &Client{}
+	cl.init(cfg)
 	go cl.acceptLimitClearer()
 	cl.initLogger()
 	defer func() {
@@ -1148,13 +1150,7 @@ func (pc *PeerConn) sendInitialMessages() {
 					Ipv4: pp.CompactIp(cl.config.PublicIp4.To4()),
 					Ipv6: cl.config.PublicIp6.To16(),
 				}
-				g.MakeMapWithCap(&msg.M, len(pc.LocalLtepProtocolMap))
-				for i, name := range pc.LocalLtepProtocolMap {
-					old := g.MapInsert(msg.M, name, pp.ExtensionNumber(i+1))
-					if old.Ok {
-						panic(fmt.Sprintf("extension %q already defined with id %v", name, old.Value))
-					}
-				}
+				msg.M = pc.LocalLtepProtocolMap.toSupportedExtensionDict()
 				return bencode.MustMarshal(msg)
 			}(),
 		})
