@@ -900,6 +900,8 @@ func (c *PeerConn) onReadExtendedMsg(id pp.ExtensionNumber, payload []byte) (err
 			c.logger.Printf("error parsing extended handshake message %q: %s", payload, err)
 			return fmt.Errorf("unmarshalling extended handshake payload: %w", err)
 		}
+		// Trigger this callback after it's been processed. If you want to handle it yourself, you
+		// should hook PeerConnReadExtensionMessage.
 		if cb := c.callbacks.ReadExtendedHandshake; cb != nil {
 			cb(c, &d)
 		}
@@ -935,7 +937,7 @@ func (c *PeerConn) onReadExtendedMsg(id pp.ExtensionNumber, payload []byte) (err
 		}
 		return nil
 	}
-	extensionName, builtin, err := c.LocalLtepProtocolMap.lookupId(id)
+	extensionName, builtin, err := c.LocalLtepProtocolMap.LookupId(id)
 	if err != nil {
 		return
 	}
@@ -1191,4 +1193,19 @@ func makeBuiltinLtepProtocols(pex bool) LocalLtepProtocolMap {
 
 func (c *PeerConn) addBuiltinLtepProtocols(pex bool) {
 	c.LocalLtepProtocolMap = &c.t.cl.defaultLocalLtepProtocolMap
+}
+
+func (pc *PeerConn) WriteExtendedMessage(extName pp.ExtensionName, payload []byte) error {
+	pc.locker().Lock()
+	defer pc.locker().Unlock()
+	id := pc.PeerExtensionIDs[extName]
+	if id == 0 {
+		return fmt.Errorf("peer does not support or has disabled extension %q", extName)
+	}
+	pc.write(pp.Message{
+		Type:            pp.Extended,
+		ExtendedID:      id,
+		ExtendedPayload: payload,
+	})
+	return nil
 }
