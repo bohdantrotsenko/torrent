@@ -1,4 +1,4 @@
-package torrent
+package torrent_test
 
 import (
 	"strconv"
@@ -11,6 +11,8 @@ import (
 	"github.com/anacrolix/torrent/internal/testutil"
 
 	"github.com/anacrolix/sync"
+
+	. "github.com/anacrolix/torrent"
 )
 
 const (
